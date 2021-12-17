@@ -1,0 +1,49 @@
+library(quantmod)
+library(PerformanceAnalytics)
+library(PortfolioAnalytics)
+
+tickers <- c("PETR4.SA", "VALE3.SA", "BBDC4.SA", "WEGE3.SA", "ALPA4.SA", "CMIG4.SA", "LAME4.SA")
+
+tickers_clean <- c("PETR", "VALE", "BBDC", "WEGE", "ALPA", "CMIG", "LAME")
+
+pesos <- c(0.14, 0.14, 0.14, 0.14,0.14,0.14,0.14)
+
+prices <- NULL
+for (ticker in tickers){
+  prices <- cbind(prices, getSymbols(ticker, from = '2016-1-1', periodicity = 'daily', auto.assign = F)[,4])
+}
+
+
+benchmark <- getSymbols("^BVSP", from='2016-1-1', periodicity = 'daily', auto.assign = F)[,4]
+
+
+portf.ret <- na.omit(ROC(prices, type = "continuous"))[-1,]
+colnames(portf.ret) <- tickers_clean
+
+
+portf <- portfolio.spec(colnames(portf.ret))
+portf <- add.constraint(portf, type = 'weight_sum', min_sum =0.99, max_sum =1.01)
+portf <- add.constraint(portf, type = "transaction_cost", ptc=0.001)
+portf <- add.constraint(portf, type = 'box', min = .10, max = .70)
+portf <- add.objective(portf, type = 'return', name="mean")
+portf <- add.objective(portf, type = 'risk', name="StdDev")
+
+
+rp <- random_portfolios(portfolio = portf, permutations = 1000, rp_method = "sample")
+
+optReb <- optimize.portfolio.rebalancing(portf.ret, portf, optimize_method = "random",
+                                         rp=rp, rebalance_on = "months", training_period = 50,
+                                         rolling_window = 20)
+
+
+chart.Weights(optReb)
+
+
+benchmark <- na.omit(ROC(benchmark, type = 'continuous'))[-1]
+
+rebal_weights <- extractWeights(optReb)
+rebal_ret <- Return.portfolio(portf.ret, weights = rebal_weights)
+real_ret <- Return.portfolio(portf.ret, weights = pesos)
+rets_df <- na.omit(cbind(rebal_ret, benchmark, real_ret))
+
+charts.PerformanceSummary(rets_df)
